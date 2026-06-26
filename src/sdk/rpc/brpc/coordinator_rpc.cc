@@ -42,6 +42,8 @@ DEFINE_COORDINATOR_RPC(TransferLeaderRegion);
 DEFINE_COORDINATOR_RPC(MDSHeartbeat);
 DEFINE_COORDINATOR_RPC(GetMDSList);
 
+DEFINE_COORDINATOR_RPC(GetGCSafePoint);
+
 DEFINE_META_RPC(CreateAutoIncrement);
 DEFINE_META_RPC(DeleteAutoIncrement);
 DEFINE_META_RPC(GenerateAutoIncrement);

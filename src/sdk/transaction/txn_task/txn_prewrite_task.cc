@@ -214,6 +214,9 @@ void TxnPrewriteTask::TxnPrewriteRpcCallback(const Status& status, TxnPrewriteRp
   bool need_retry = false;
   Status s;
   const auto* response = rpc->Response();
+  if (response->has_response_info() && response->response_info().has_time_info()) {
+    AccumulateServerTimeInfo(response->response_info().time_info(), *txn_impl_->GetTracer(), /*is_read=*/false);
+  }
   if (!status.ok()) {
     DINGO_LOG(WARNING) << fmt::format("[sdk.txn.{}] rpc: {} send to region: {} fail: {}", txn_impl_->ID(),
                                       rpc->Method(), rpc->Request()->context().region_id(), status.ToString());

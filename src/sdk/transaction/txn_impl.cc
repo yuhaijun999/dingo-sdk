@@ -58,7 +58,14 @@ TxnImplSPtr TxnImpl::GetSelfPtr() { return std::dynamic_pointer_cast<TxnImpl>(sh
 
 Status TxnImpl::Begin() {
   int64_t start_ts;
-  Status status = stub_.GetTsoProvider()->GenTs(2, start_ts);
+  Status status;
+  if (options_.start_ts > 0) {
+    // Caller pinned a fixed start_ts (e.g. to read an older snapshot). Must be > GC safe point.
+    start_ts = options_.start_ts;
+    status = Status::OK();
+  } else {
+    status = stub_.GetTsoProvider()->GenTs(2, start_ts);
+  }
   if (status.ok()) {
     state_.store(kActive);
     start_ts_.store(start_ts);
@@ -932,6 +939,18 @@ void TxnImpl::GetTraceMetrics(TraceMetrics& metrics) {
   metrics.resolve_lock_time_us = tracker_->ResolveLockSdkTime();
   metrics.sleep_time_us = tracker_->SleepTime();
   metrics.sleep_count = tracker_->SleepTimeCount();
+
+  auto copy_server = [](const Tracker::ServerMetrics& src, TraceMetrics::ServerMetric& dst) {
+    dst.phase_time_us = src.phase_time_us.load();
+    dst.mvcc_version = src.mvcc_version.load();
+    dst.internal_skipped = src.internal_skipped.load();
+    dst.tombstone = src.tombstone.load();
+    dst.io_time_us = src.io_time_us.load();
+    dst.miss_block = src.miss_block.load();
+    dst.raft_commit_time_us = src.raft_commit_time_us.load();
+  };
+  copy_server(tracker_->ServerReadMetrics(), metrics.server_read_metric);
+  copy_server(tracker_->ServerWriteMetrics(), metrics.server_write_metric);
 }
 }  // namespace sdk
 }  // namespace dingodb

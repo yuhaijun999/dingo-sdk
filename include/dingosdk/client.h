@@ -186,6 +186,30 @@ struct TraceMetrics {
   Metric prewrite_metric;
   Metric commit_metric;
 
+  // Server-side RocksDB/MVCC metrics from response_info.time_info, accumulated across the
+  // transaction's RPCs. server_read aggregates scan RPCs; server_write aggregates prewrite+commit.
+  struct ServerMetric {
+    std::atomic<uint64_t> phase_time_us{0};        // sum of per-phase elapsed time
+    std::atomic<uint64_t> mvcc_version{0};         // sum of skipped MVCC versions
+    std::atomic<uint64_t> internal_skipped{0};     // sum of skipped internal keys
+    std::atomic<uint64_t> tombstone{0};            // sum of tombstones encountered
+    std::atomic<uint64_t> io_time_us{0};           // sum of RocksDB IO time
+    std::atomic<uint64_t> miss_block{0};           // sum of block-cache misses
+    std::atomic<uint64_t> raft_commit_time_us{0};  // sum of raft commit time
+
+    std::string ToString() const {
+      return fmt::format("phase_us({}) mvcc_version({}) internal_skipped({}) tombstone({}) io_us({}) miss_block({}) "
+                         "raft_commit_us({})",
+                         phase_time_us.load(std::memory_order_relaxed), mvcc_version.load(std::memory_order_relaxed),
+                         internal_skipped.load(std::memory_order_relaxed), tombstone.load(std::memory_order_relaxed),
+                         io_time_us.load(std::memory_order_relaxed), miss_block.load(std::memory_order_relaxed),
+                         raft_commit_time_us.load(std::memory_order_relaxed));
+    }
+  };
+
+  ServerMetric server_read_metric;
+  ServerMetric server_write_metric;
+
   std::atomic<uint64_t> resolve_lock_time_us{0};
 
   std::atomic<uint64_t> sleep_time_us{0};
@@ -194,10 +218,11 @@ struct TraceMetrics {
   std::string ToString() const {
     return fmt::format(
         "total_time_us({}) read({}) prewrite({}) commit({}) "
-        "resolve_lock({}) sleep({} {})",
+        "resolve_lock({}) sleep({} {}) server_read[{}] server_write[{}]",
         total_time_us.load(std::memory_order_relaxed), read_metric.ToString(), prewrite_metric.ToString(),
         commit_metric.ToString(), resolve_lock_time_us.load(std::memory_order_relaxed),
-        sleep_time_us.load(std::memory_order_relaxed), sleep_count.load(std::memory_order_relaxed));
+        sleep_time_us.load(std::memory_order_relaxed), sleep_count.load(std::memory_order_relaxed),
+        server_read_metric.ToString(), server_write_metric.ToString());
   }
 };
 
@@ -261,6 +286,12 @@ struct TransactionOptions {
   TransactionKind kind;
   TransactionIsolation isolation;
   uint32_t keep_alive_ms;
+  // Optional fixed read/start timestamp for this transaction.
+  // 0 (default) means the SDK auto-generates start_ts from the TSO (latest).
+  // When > 0, the transaction begins at exactly this timestamp; the caller must
+  // ensure it is newer than the dingo-store GC safe point, otherwise reclaimed
+  // old versions may cause read errors. Mainly used to read an older snapshot.
+  int64_t start_ts{0};
 };
 
 class Transaction {

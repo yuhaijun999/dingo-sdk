@@ -71,3 +71,22 @@ add_executable(txn_scan_test
 target_link_libraries(txn_scan_test
     sdk
 )
+
+# tombstone 优化前后对比测试程序（A 建 region / B 灌数据 / C 扫描）
+add_executable(tombstone_test_create_region
+    tombstone_test_create_region.cc)
+target_link_libraries(tombstone_test_create_region
+    sdk
+)
+
+add_executable(tombstone_test_load_data
+    tombstone_test_load_data.cc)
+target_link_libraries(tombstone_test_load_data
+    sdk
+)
+
+add_executable(tombstone_test_scan
+    tombstone_test_scan.cc)
+target_link_libraries(tombstone_test_scan
+    sdk
+)

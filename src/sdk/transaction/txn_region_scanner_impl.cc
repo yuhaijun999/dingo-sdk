@@ -103,6 +103,9 @@ Status TxnRegionScannerImpl::NextBatch(std::vector<KVPair>& kvs) {
     }
 
     const auto* response = rpc->Response();
+    if (tracker_ && response->has_response_info() && response->response_info().has_time_info()) {
+      AccumulateServerTimeInfo(response->response_info().time_info(), *tracker_, /*is_read=*/true);
+    }
     if (response->has_txn_result()) {
       const auto& txn_result = response->txn_result();
       status = CheckTxnResultInfo(txn_result);

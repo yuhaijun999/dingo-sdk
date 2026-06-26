@@ -253,5 +253,22 @@ Status Coordinator::GetMDSList(std::vector<MDS>& mdses) {
   return status;
 }
 
+Status Coordinator::GetGCSafePoint(int64_t& out_safe_point, bool& out_gc_stop) {
+  GetGCSafePointRpc rpc;
+  // Leave tenant_ids empty and get_all_tenant=false: coordinator returns the default tenant safe point.
+  rpc.MutableRequest()->set_get_all_tenant(false);
+
+  Status status = stub_.GetCoordinatorRpcController()->SyncCall(rpc);
+  if (!status.IsOK()) {
+    DINGO_LOG(ERROR) << fmt::format("Get gc safe point fail, error: {} {}", status.Errno(), status.ToString());
+    return status;
+  }
+
+  out_safe_point = rpc.Response()->safe_point();
+  out_gc_stop = rpc.Response()->gc_stop();
+
+  return status;
+}
+
 }  // namespace sdk
 }  // namespace dingodb

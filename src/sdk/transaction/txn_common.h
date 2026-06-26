@@ -18,9 +18,43 @@
 #include "dingosdk/client.h"
 #include "glog/logging.h"
 #include "proto/store.pb.h"
+#include "sdk/common/tracker.h"
 
 namespace dingodb {
 namespace sdk {
+
+// 解析服务端 response_info.time_info，累加到 tracker 的读(scan)或写(prewrite/commit)桶。
+static void AccumulateServerTimeInfo(const pb::common::TimeInfo& time_info, Tracker& tracker, bool is_read) {
+  uint64_t phase_us = 0;
+  uint64_t mvcc_version = 0;
+  uint64_t internal_skipped = 0;
+  uint64_t tombstone = 0;
+  uint64_t io_us = 0;
+  uint64_t miss_block = 0;
+  for (const auto& et : time_info.elapsed_times()) {
+    phase_us += et.time_us();
+    if (et.skip_version() > 0) {
+      mvcc_version += static_cast<uint64_t>(et.skip_version());
+    }
+    if (et.has_storage_engine_perf_summary()) {
+      const auto& perf = et.storage_engine_perf_summary();
+      internal_skipped += perf.internal_skipped_count();
+      tombstone += perf.internal_tombstone_count();
+      io_us += perf.io_time_ns() / 1000;
+      miss_block += perf.miss_block_count();
+    }
+  }
+  uint64_t raft_commit_us =
+      time_info.raft_commit_time_ns() > 0 ? static_cast<uint64_t>(time_info.raft_commit_time_ns()) / 1000 : 0;
+
+  if (is_read) {
+    tracker.AccumulateServerReadMetrics(phase_us, mvcc_version, internal_skipped, tombstone, io_us, miss_block,
+                                        raft_commit_us);
+  } else {
+    tracker.AccumulateServerWriteMetrics(phase_us, mvcc_version, internal_skipped, tombstone, io_us, miss_block,
+                                         raft_commit_us);
+  }
+}
 
 static pb::store::IsolationLevel ToIsolationLevel(TransactionIsolation isolation) {
   switch (isolation) {

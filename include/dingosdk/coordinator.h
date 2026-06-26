@@ -70,6 +70,12 @@ class Coordinator {
   Status MDSHeartbeat(const MDS& mds, std::vector<MDS>& out_mdses);
   Status GetMDSList(std::vector<MDS>& mdses);
 
+  // GC
+  // Get the GC safe point of the default tenant. A read timestamp older than
+  // out_safe_point may hit reclaimed versions. out_gc_stop tells whether GC is
+  // currently stopped on the coordinator side.
+  Status GetGCSafePoint(int64_t& out_safe_point, bool& out_gc_stop);
+
  private:
   const ClientStub& stub_;
 };

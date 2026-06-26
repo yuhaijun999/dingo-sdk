@@ -79,3 +79,4 @@ contrib/xdprocks/
 allure-reports/
 # Claude
 CLAUDE.md
+.claude/settings.local.json

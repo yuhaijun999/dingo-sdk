@@ -54,6 +54,17 @@ class Tracker {
     std::atomic<uint64_t> sleep_count{0};
   };
 
+  // 服务端 RocksDB/MVCC 性能指标（来自 response_info.time_info，累加自该事务的所有 RPC）。
+  struct ServerMetrics {
+    std::atomic<uint64_t> phase_time_us{0};       // Σ elapsed_times.time_us
+    std::atomic<uint64_t> mvcc_version{0};        // Σ elapsed_times.skip_version
+    std::atomic<uint64_t> internal_skipped{0};    // Σ storage_engine_perf_summary.internal_skipped_count
+    std::atomic<uint64_t> tombstone{0};           // Σ storage_engine_perf_summary.internal_tombstone_count
+    std::atomic<uint64_t> io_time_us{0};          // Σ storage_engine_perf_summary.io_time_ns / 1000
+    std::atomic<uint64_t> miss_block{0};          // Σ storage_engine_perf_summary.miss_block_count
+    std::atomic<uint64_t> raft_commit_time_us{0};  // Σ time_info.raft_commit_time_ns / 1000
+  };
+
   void SetTotalTransactionTime() { metrics_.total_transaction_time_us.store(TimestampUs() - start_time_); }
   uint64_t TotalTransactionTime() const { return metrics_.total_transaction_time_us.load(); }
 
@@ -104,10 +115,39 @@ class Tracker {
   void IncrementSleepCount(uint64_t count) { metrics_.sleep_count.fetch_add(count); }
   uint64_t SleepTimeCount() const { return metrics_.sleep_count.load(); }
 
+  // 累加服务端指标到读路径（scan）桶。
+  void AccumulateServerReadMetrics(uint64_t phase_us, uint64_t mvcc_version, uint64_t internal_skipped,
+                                   uint64_t tombstone, uint64_t io_us, uint64_t miss_block, uint64_t raft_commit_us) {
+    AccumulateServerMetrics(server_read_, phase_us, mvcc_version, internal_skipped, tombstone, io_us, miss_block,
+                            raft_commit_us);
+  }
+  // 累加服务端指标到写路径（prewrite/commit）桶。
+  void AccumulateServerWriteMetrics(uint64_t phase_us, uint64_t mvcc_version, uint64_t internal_skipped,
+                                    uint64_t tombstone, uint64_t io_us, uint64_t miss_block, uint64_t raft_commit_us) {
+    AccumulateServerMetrics(server_write_, phase_us, mvcc_version, internal_skipped, tombstone, io_us, miss_block,
+                            raft_commit_us);
+  }
+  const ServerMetrics& ServerReadMetrics() const { return server_read_; }
+  const ServerMetrics& ServerWriteMetrics() const { return server_write_; }
+
  private:
+  static void AccumulateServerMetrics(ServerMetrics& m, uint64_t phase_us, uint64_t mvcc_version,
+                                      uint64_t internal_skipped, uint64_t tombstone, uint64_t io_us, uint64_t miss_block,
+                                      uint64_t raft_commit_us) {
+    m.phase_time_us.fetch_add(phase_us);
+    m.mvcc_version.fetch_add(mvcc_version);
+    m.internal_skipped.fetch_add(internal_skipped);
+    m.tombstone.fetch_add(tombstone);
+    m.io_time_us.fetch_add(io_us);
+    m.miss_block.fetch_add(miss_block);
+    m.raft_commit_time_us.fetch_add(raft_commit_us);
+  }
+
   uint64_t start_time_;
 
   Metrics metrics_;
+  ServerMetrics server_read_;
+  ServerMetrics server_write_;
 };
 using TrackerPtr = std::shared_ptr<Tracker>;
 }  // namespace sdk
